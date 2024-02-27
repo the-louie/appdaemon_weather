@@ -1,0 +1,26 @@
+WindAlarmHome:
+  module: i1_weather_wind_alarm
+  class: WeatherWindAlarm
+  sensor: "weather.smhi_home"
+  recipients:
+    - mobile_app_my
+  name: "Wind"
+  limits:
+    - lt: 20
+      gt: 10
+      message: "A bit windy"
+      msg_cooldown: 86400
+    - lt: 30
+      gt: 20
+      message: "Quite windy"
+      msg_cooldown: 86400
+    - lt: 40
+      gt: 30
+      message: "Very windy!"
+      msg_cooldown: 21600
+    - lt: 1000
+      gt: 40
+      message: "STORM FFS!"
+      msg_cooldown: 3600
+
+
