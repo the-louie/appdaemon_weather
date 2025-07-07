@@ -1,26 +1,88 @@
-WindAlarmHome:
+WindAlarm:
   module: i1_weather_wind_alarm
   class: WeatherWindAlarm
-  sensor: "weather.smhi_home"
+  device_id: "8a9282bcd3f3555085c7dd8c3f"
   recipients:
-    - mobile_app_my
-  name: "Wind"
+    - mobile_app_iphone_27
+  name: "Vind"
   limits:
     - lt: 20
       gt: 10
-      message: "A bit windy"
+      message: "Lite blåsigt"
       msg_cooldown: 86400
     - lt: 30
       gt: 20
-      message: "Quite windy"
+      message: "Mycket blåsigt"
       msg_cooldown: 86400
     - lt: 40
       gt: 30
-      message: "Very windy!"
+      message: "Jätteblåsigt!"
       msg_cooldown: 21600
     - lt: 1000
       gt: 40
-      message: "STORM FFS!"
+      message: "STORM VARNING!"
       msg_cooldown: 3600
-
-
+RainAlarm:
+  module: i1_weather_rain_alarm
+  class: WeatherRainAlarm
+  device_id: "8a9282bcd3f3555085c7dd8c3f"
+  recipients:
+    - mobile_app_iphone_27
+  name: "Regn"
+  limits:
+    - lt: 2.5
+      gt: 0.5
+      message: "Lite regn"
+      msg_cooldown: 86400
+    - lt: 7.5
+      gt: 2.5
+      message: "Måttligt regn"
+      msg_cooldown: 86400
+    - lt: 15
+      gt: 7.5
+      message: "Kraftigt regn"
+      msg_cooldown: 21600
+    - lt: 1000
+      gt: 15
+      message: "STARKT REGN!"
+      msg_cooldown: 3600
+TemperatureAlarm:
+  module: i1_weather_temperature_alarm
+  class: WeatherTemperatureAlarm
+  device_id: "8a9282bcd3f3555085c7dd8c3f"
+  recipients:
+    - mobile_app_iphone_27
+  name: "Temperatur"
+  limits:
+    - lt: 15
+      gt: 10
+      message: "Kyligt"
+      msg_cooldown: 86400
+    - lt: 5
+      gt: 0
+      message: "Kallt"
+      msg_cooldown: 86400
+    - lt: 0
+      gt: -10
+      message: "Mycket kallt!"
+      msg_cooldown: 21600
+    - lt: -10
+      gt: -50
+      message: "EXTREMT KALLT!"
+      msg_cooldown: 3600
+    - lt: 25
+      gt: 20
+      message: "Varmt"
+      msg_cooldown: 86400
+    - lt: 30
+      gt: 25
+      message: "Mycket varmt"
+      msg_cooldown: 86400
+    - lt: 35
+      gt: 30
+      message: "Hett!"
+      msg_cooldown: 21600
+    - lt: 1000
+      gt: 35
+      message: "EXTREMT HETT!"
+      msg_cooldown: 3600
