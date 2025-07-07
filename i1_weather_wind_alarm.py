@@ -7,7 +7,7 @@ import appdaemon.plugins.hass.hassapi as hass
 #  class: WeatherWindAlarm
 #  sensor: "weather.smhi_home"
 #  recipients:
-#    - mobile_app_louies_telefon
+#    - mobile_app_pixel_9_pro
 #  name: "Vind"
 #  limits:
 #    - lt: 20
