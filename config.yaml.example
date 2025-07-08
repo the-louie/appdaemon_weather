@@ -4,6 +4,8 @@ WindAlarm:
   device_id: "8a9282bcd3f3555085c7dd8c3f"
   recipients:
     - mobile_app_iphone_27
+      startup_message: true
+      time_of_day: "18:15"
   name: "Vind"
   limits:
     - lt: 20
@@ -28,12 +30,13 @@ RainAlarm:
   device_id: "8a9282bcd3f3555085c7dd8c3f"
   recipients:
     - mobile_app_iphone_27
+      startup_message: true
+      time_of_day: "18:15"
+    - mobile_app_iphone_27_2
+      startup_message: false
+      time_of_day: "12:15"
   name: "Regn"
   limits:
-    - lt: 2.5
-      gt: 0.5
-      message: "Lite regn"
-      msg_cooldown: 86400
     - lt: 7.5
       gt: 2.5
       message: "Måttligt regn"
@@ -52,16 +55,10 @@ TemperatureAlarm:
   device_id: "8a9282bcd3f3555085c7dd8c3f"
   recipients:
     - mobile_app_iphone_27
+      startup_message: true
+      time_of_day: "18:15"
   name: "Temperatur"
   limits:
-    - lt: 15
-      gt: 10
-      message: "Kyligt"
-      msg_cooldown: 86400
-    - lt: 5
-      gt: 0
-      message: "Kallt"
-      msg_cooldown: 86400
     - lt: 0
       gt: -10
       message: "Mycket kallt!"

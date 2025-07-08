@@ -1,9 +1,26 @@
 from datetime import datetime, timedelta
+from typing import Dict
 import appdaemon.plugins.hass.hassapi as hass
 
 
 class WeatherAlarmBase(hass.Hass):
     """Base class for weather alarm apps with shared functionality."""
+
+    # Constants
+    DEFAULT_TIME_OF_DAY = "18:15"
+    DEFAULT_COOLDOWN = 86400  # 24 hours in seconds
+    MIN_NOTIFICATION_INTERVAL = 60  # Minimum seconds between notifications
+    MAX_MESSAGE_LENGTH = 1000
+    MAX_WEATHER_VALUE = 1000
+    MIN_WEATHER_VALUE = -100
+    CLEANUP_MAX_AGE_DAYS = 7
+    CLEANUP_TIME = "02:00"
+
+    def __init__(self, *args, **kwargs):
+        """Initialize the base class with rate limiting."""
+        super().__init__(*args, **kwargs)
+        self.last_notification_time: Dict[str, datetime] = {}  # Track last notification per recipient
+        self.min_notification_interval = self.MIN_NOTIFICATION_INTERVAL  # Minimum seconds between notifications per recipient
 
     def initialize(self):
         """Initialize the weather alarm app."""
@@ -24,9 +41,28 @@ class WeatherAlarmBase(hass.Hass):
 
         # Schedule checks
         self.run_in(self.check_weather_forecast, 0)
-        self.run_every(self.check_weather_forecast, "now", 6 * 60 * 60)  # 6 hours
+        self._schedule_daily_checks()
 
-        self.log(f"{self.__class__.__name__} initialized - will check every 6 hours")
+        # Schedule periodic cleanup (daily at 02:00)
+        self.run_daily(self._cleanup_old_data, "02:00")
+
+        # Send startup messages to recipients who have it enabled
+        self._send_startup_messages()
+
+        self.log(f"{self.__class__.__name__} initialized - daily checks scheduled per recipient")
+
+    def _validate_time_format(self, time_str):
+        """Validate time format is HH:MM."""
+        if not isinstance(time_str, str):
+            return False
+        try:
+            parts = time_str.split(':')
+            if len(parts) != 2:
+                return False
+            hour, minute = int(parts[0]), int(parts[1])
+            return 0 <= hour <= 23 and 0 <= minute <= 59
+        except (ValueError, TypeError):
+            return False
 
     def _validate_config(self):
         """Validate the app configuration."""
@@ -41,33 +77,177 @@ class WeatherAlarmBase(hass.Hass):
         if not isinstance(self.recipients, list):
             self.recipients = [self.recipients]
 
+        # Process recipients to handle both string and dict formats
+        self.processed_recipients = []
+        for recipient in self.recipients:
+            if isinstance(recipient, str):
+                # Simple string format - use default settings
+                self.processed_recipients.append({
+                    'name': recipient,
+                    'startup_message': True,
+                    'time_of_day': self.DEFAULT_TIME_OF_DAY
+                })
+            elif isinstance(recipient, dict):
+                # Dict format with custom settings
+                if not recipient:
+                    self.log(f" >> {self.__class__.__name__}.initialize(): Warning - empty recipient dict")
+                    return False
+
+                # Handle different dict formats
+                if 'name' in recipient:
+                    recipient_name = recipient['name']
+                elif len(recipient) == 1:
+                    # Single key-value pair format
+                    recipient_name = list(recipient.keys())[0]
+                else:
+                    self.log(f" >> {self.__class__.__name__}.initialize(): Warning - invalid recipient dict format: {recipient}")
+                    return False
+
+                self.processed_recipients.append({
+                    'name': recipient_name,
+                    'startup_message': recipient.get('startup_message', True),
+                    'time_of_day': recipient.get('time_of_day', self.DEFAULT_TIME_OF_DAY)
+                })
+
+                # Validate time format
+                time_of_day = recipient.get('time_of_day', self.DEFAULT_TIME_OF_DAY)
+                if not self._validate_time_format(time_of_day):
+                    self.log(f" >> {self.__class__.__name__}.initialize(): Warning - invalid time format '{time_of_day}' for recipient {recipient_name}")
+                    return False
+            else:
+                self.log(f" >> {self.__class__.__name__}.initialize(): Warning - invalid recipient format: {recipient}")
+                return False
+
         if not self.limits:
             self.log(f" >> {self.__class__.__name__}.initialize(): Warning - no limits configured")
             return False
 
         # Validate limit ranges
         for i, limit in enumerate(self.limits):
-            gt = limit.get("gt", 0)
-            lt = limit.get("lt", float('inf'))
-            if gt >= lt:
-                self.log(f" >> {self.__class__.__name__}.initialize(): Warning - invalid limit range at index {i}: gt={gt}, lt={lt}")
+            if not isinstance(limit, dict):
+                self.log(f" >> {self.__class__.__name__}.initialize(): Warning - limit at index {i} is not a dict")
+                return False
+
+            try:
+                gt = limit.get("gt", 0)
+                lt = limit.get("lt", float('inf'))
+
+                # Ensure values are numeric
+                if not isinstance(gt, (int, float)) or not isinstance(lt, (int, float)):
+                    self.log(f" >> {self.__class__.__name__}.initialize(): Warning - non-numeric limit values at index {i}: gt={gt}, lt={lt}")
+                    return False
+
+                # Validate range
+                if gt >= lt:
+                    self.log(f" >> {self.__class__.__name__}.initialize(): Warning - invalid limit range at index {i}: gt={gt}, lt={lt}")
+                    return False
+
+                # Validate cooldown if present
+                cooldown = limit.get("msg_cooldown")
+                if cooldown is not None and (not isinstance(cooldown, (int, float)) or cooldown < 0):
+                    self.log(f" >> {self.__class__.__name__}.initialize(): Warning - invalid cooldown value at index {i}: {cooldown}")
+                    return False
+
+            except (ValueError, TypeError) as e:
+                self.log(f" >> {self.__class__.__name__}.initialize(): Warning - error processing limit at index {i}: {e}")
                 return False
 
         return True
 
+    def _validate_weather_value(self, value):
+        """Validate weather value is reasonable."""
+        if value is None:
+            return False
+
+        try:
+            float_value = float(value)
+            # Check for reasonable ranges (adjust based on weather type)
+            if not (self.MIN_WEATHER_VALUE <= float_value <= self.MAX_WEATHER_VALUE):  # Very broad range for different weather types
+                self.log(f"Warning: Weather value {float_value} seems unreasonable")
+                return False
+            return True
+        except (ValueError, TypeError):
+            return False
+
     def _initialize_cooldowns(self):
         """Initialize cooldown tracking for each recipient and limit."""
         self.recipient_cooldowns = {}
-        for recipient in self.recipients:
-            self.recipient_cooldowns[recipient] = {}
+        for recipient in self.processed_recipients:
+            recipient_name = recipient['name']
+            self.recipient_cooldowns[recipient_name] = {}
             for limit in self.limits:
                 message = limit.get("message", "default")
                 cooldown = limit.get("msg_cooldown", 86400)
-                self.recipient_cooldowns[recipient][message] = datetime.now() - timedelta(seconds=cooldown)
+                self.recipient_cooldowns[recipient_name][message] = datetime.now() - timedelta(seconds=cooldown)
+
+    def _schedule_daily_checks(self):
+        """Schedule daily checks for each recipient at their specified time."""
+        scheduled_times = set()
+
+        for recipient in self.processed_recipients:
+            time_of_day = recipient['time_of_day']
+            if time_of_day not in scheduled_times:
+                # Only schedule once per unique time
+                self.run_daily(self.check_weather_forecast, time_of_day)
+                self.log(f"Scheduled daily check at {time_of_day}")
+                scheduled_times.add(time_of_day)
+
+    def _send_startup_messages(self):
+        """Send startup verification messages to recipients who have it enabled."""
+        startup_message = f"{self.alert_name} - {self.__class__.__name__} is now active and monitoring {self._get_weather_description().lower()} conditions."
+        startup_message = self._sanitize_message(startup_message)
+        title = self._sanitize_message(f"{self.alert_name} - Startup")
+
+        for recipient in self.processed_recipients:
+            if recipient.get('startup_message', True):
+                recipient_name = recipient['name']
+                try:
+                    self.call_service(
+                        "notify/{}".format(recipient_name),
+                        title=title,
+                        message=startup_message
+                    )
+                    self.log(f"Startup message sent to {recipient_name}")
+                except Exception as e:
+                    self.log(f"Error sending startup message to {recipient_name}: {e}")
+            else:
+                self.log(f"Skipping startup message for {recipient['name']} (disabled)")
+
+    def _cleanup_old_data(self):
+        """Clean up old cooldown data to prevent memory bloat."""
+        now = datetime.now()
+        max_age = timedelta(days=7)  # Keep 7 days of data
+
+        for recipient_name in list(self.recipient_cooldowns.keys()):
+            for message in list(self.recipient_cooldowns[recipient_name].keys()):
+                last_time = self.recipient_cooldowns[recipient_name][message]
+                if (now - last_time) > max_age:
+                    del self.recipient_cooldowns[recipient_name][message]
+
+            # Remove empty recipient entries
+            if not self.recipient_cooldowns[recipient_name]:
+                del self.recipient_cooldowns[recipient_name]
+
+    def _log_with_level(self, message, level="INFO"):
+        """Log message with specified level."""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_message = f"[{timestamp}] {self.__class__.__name__}: {message}"
+
+        if level == "ERROR":
+            self.log(log_message, level="ERROR")
+        elif level == "WARNING":
+            self.log(log_message, level="WARNING")
+        else:
+            self.log(log_message)
+
+    def _log_performance_metrics(self, operation, duration):
+        """Log performance metrics for monitoring."""
+        self._log_with_level(f"Performance: {operation} took {duration:.3f}s")
 
     def check_weather_forecast(self, kwargs=None):
         """Fetch weather forecast and check weather data."""
-        self.log("Checking weather forecast...")
+        start_time = datetime.now()
+        self._log_with_level("Starting weather forecast check")
 
         try:
             response = self.call_service(
@@ -77,18 +257,29 @@ class WeatherAlarmBase(hass.Hass):
             )
 
             if response is None:
-                self.log("No response from weather service")
+                self._log_with_level("No response from weather service", "WARNING")
                 return
 
             forecast_data = self._extract_forecast_data(response)
             if forecast_data is None:
-                self.log("Could not extract forecast data from response")
+                self._log_with_level("Could not extract forecast data from response", "WARNING")
                 return
 
             self._check_forecast_data(forecast_data)
 
+            # Log performance metrics
+            duration = (datetime.now() - start_time).total_seconds()
+            self._log_performance_metrics("weather_forecast_check", duration)
+
+        except ValueError as e:
+            self._log_with_level(f"Value error in weather service call: {e}", "ERROR")
+        except TypeError as e:
+            self._log_with_level(f"Type error in weather service call: {e}", "ERROR")
         except Exception as e:
-            self.log(f"Error checking weather forecast: {e}")
+            self._log_with_level(f"Unexpected error checking weather forecast: {e}", "ERROR")
+            # Log the full exception for debugging
+            import traceback
+            self._log_with_level(f"Full traceback: {traceback.format_exc()}", "ERROR")
 
     def _extract_forecast_data(self, response):
         """Extract forecast data from the service response."""
@@ -152,6 +343,11 @@ class WeatherAlarmBase(hass.Hass):
 
     def _check_weather_limit(self, weather_value, forecast_time=None):
         """Check if weather value exceeds any configured limits."""
+        # Validate weather value before processing
+        if not self._validate_weather_value(weather_value):
+            self.log(f"Skipping invalid weather value: {weather_value}")
+            return
+
         for limit in self.limits:
             gt = limit.get("gt", 0)
             lt = limit.get("lt", float('inf'))
@@ -169,6 +365,19 @@ class WeatherAlarmBase(hass.Hass):
         """Get weather unit for logging. Override in subclasses."""
         return "units"
 
+    def _sanitize_message(self, message):
+        """Sanitize message content for safe notification sending."""
+        if not isinstance(message, str):
+            return str(message)
+
+        # Remove or escape potentially problematic characters
+        # Limit length to prevent notification service issues
+        max_length = 1000
+        if len(message) > max_length:
+            message = message[:max_length - 3] + "..."
+
+        return message
+
     def _send_notification(self, triggered_limit, weather_value, forecast_time=None):
         """Send notification to all configured recipients with per-recipient cooldown."""
         now = datetime.now()
@@ -183,24 +392,46 @@ class WeatherAlarmBase(hass.Hass):
         else:
             full_message = message
 
+        # Sanitize messages
+        full_message = self._sanitize_message(full_message)
+        title = self._sanitize_message(f"{self.alert_name} - {self._get_warning_title()}")
+
         self.log(f"Checking notifications for: {full_message}")
 
-        for recipient in self.recipients:
-            if self._should_send_notification(recipient, limit_message, cooldown_seconds, now):
+        for recipient in self.processed_recipients:
+            recipient_name = recipient['name']
+            if self._should_send_notification(recipient_name, limit_message, cooldown_seconds, now):
+                # Check rate limiting
+                if not self._check_rate_limit(recipient_name, now):
+                    self.log(f"Rate limit active for {recipient_name}, skipping notification")
+                    continue
+
                 try:
                     self.call_service(
-                        "notify/{}".format(recipient),
-                        title=f"{self.alert_name} - {self._get_warning_title()}",
+                        "notify/{}".format(recipient_name),
+                        title=title,
                         message=full_message
                     )
-                    self.recipient_cooldowns[recipient][limit_message] = now
-                    self.log(f"Notification sent to {recipient}")
+                    self.recipient_cooldowns[recipient_name][limit_message] = now
+                    self.last_notification_time[recipient_name] = now
+                    self.log(f"Notification sent to {recipient_name}")
                 except Exception as e:
-                    self.log(f"Error sending notification to {recipient}: {e}")
+                    self.log(f"Error sending notification to {recipient_name}: {e}")
+            else:
+                self.log(f"Cooldown active for {recipient_name} on limit '{limit_message}'")
 
     def _get_warning_title(self):
         """Get warning title for notifications. Override in subclasses."""
         return "Weather Warning"
+
+    def _check_rate_limit(self, recipient, now):
+        """Check if notification is allowed based on rate limiting."""
+        last_time = self.last_notification_time.get(recipient)
+        if last_time is None:
+            return True
+
+        time_since_last = (now - last_time).total_seconds()
+        return time_since_last >= self.min_notification_interval
 
     def _should_send_notification(self, recipient, limit_message, cooldown_seconds, now):
         """Check if notification should be sent based on cooldown."""

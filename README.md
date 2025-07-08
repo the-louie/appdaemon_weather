@@ -1,18 +1,19 @@
 # AppDaemon Weather Alarm System
 
-A comprehensive weather monitoring system for Home Assistant that provides intelligent notifications for wind, rain, and temperature conditions. Built with AppDaemon, this system fetches weather forecasts every 6 hours and sends personalized notifications when conditions exceed configured thresholds.
+A comprehensive weather monitoring system for Home Assistant that provides intelligent notifications for wind, rain, and temperature conditions. Built with AppDaemon, this system fetches weather forecasts daily at configurable times per recipient and sends personalized notifications when conditions exceed configured thresholds.
 
 ## Summary
 
-This weather alarm system consists of three specialized AppDaemon apps that monitor different weather parameters from your Home Assistant weather integration. Each app runs independently every 6 hours, fetches hourly weather forecasts, and sends notifications to configured recipients when conditions exceed predefined limits. The system features per-recipient cooldown periods to prevent notification spam, comprehensive error handling, and a modular architecture that makes it easy to extend for additional weather parameters.
+This weather alarm system consists of three specialized AppDaemon apps that monitor different weather parameters from your Home Assistant weather integration. Each app runs independently daily at configurable times per recipient, fetches hourly weather forecasts, and sends notifications to configured recipients when conditions exceed predefined limits. The system features per-recipient cooldown periods to prevent notification spam, comprehensive error handling, and a modular architecture that makes it easy to extend for additional weather parameters.
 
 The apps use a shared base class (`WeatherAlarmBase`) that handles all common functionality including configuration validation, forecast data extraction, notification management, and cooldown tracking. Each weather-specific app only needs to implement the data extraction and display formatting for its particular weather parameter, making the codebase highly maintainable and extensible.
 
 ## Features
 
 - **Multi-parameter monitoring**: Wind gust speeds, precipitation, and temperature
-- **Intelligent scheduling**: Checks every 6 hours with immediate first run
+- **Intelligent scheduling**: Checks daily at configurable times per recipient with immediate first run
 - **Per-recipient cooldown**: Each recipient has independent notification timing
+- **Startup verification**: Optional startup messages to verify notification functionality
 - **Configurable thresholds**: Multiple severity levels with custom messages
 - **Robust error handling**: Graceful handling of missing data and service errors
 - **Comprehensive logging**: Detailed logs for debugging and monitoring
@@ -36,6 +37,8 @@ WindAlarm:
   device_id: "your_weather_device_id"
   recipients:
     - mobile_app_your_device
+      startup_message: true
+      time_of_day: "18:15"
   name: "Wind"
   limits:
     - lt: 20
@@ -61,6 +64,11 @@ RainAlarm:
   device_id: "your_weather_device_id"
   recipients:
     - mobile_app_your_device
+      startup_message: true
+      time_of_day: "18:15"
+    - mobile_app_your_device_2
+      startup_message: false
+      time_of_day: "12:15"
   name: "Rain"
   limits:
     - lt: 2.5
@@ -86,6 +94,8 @@ TemperatureAlarm:
   device_id: "your_weather_device_id"
   recipients:
     - mobile_app_your_device
+      startup_message: true
+      time_of_day: "18:15"
   name: "Temperature"
   limits:
     - lt: 15
@@ -127,8 +137,34 @@ TemperatureAlarm:
 ### Required Parameters
 
 - **`device_id`**: The Home Assistant device ID of your weather integration
-- **`recipients`**: List of notification service names (e.g., `mobile_app_your_device`)
+- **`recipients`**: List of recipient configurations (see Recipient Configuration below)
 - **`limits`**: Array of threshold configurations
+
+### Recipient Configuration
+
+Recipients can be configured in two formats:
+
+**Simple format (legacy):**
+```yaml
+recipients:
+  - mobile_app_your_device
+```
+
+**Advanced format (recommended):**
+```yaml
+recipients:
+  - mobile_app_your_device
+    startup_message: true
+    time_of_day: "18:15"
+  - mobile_app_your_device_2
+    startup_message: false
+    time_of_day: "12:15"
+```
+
+**Recipient Parameters:**
+- **`name`** (optional): Recipient name (defaults to the key if using dict format)
+- **`startup_message`** (optional): Whether to send verification message on app startup (default: true)
+- **`time_of_day`** (optional): Daily check time in HH:MM format (default: "18:15")
 
 ### Limit Configuration
 
@@ -148,12 +184,13 @@ Each limit has the following parameters:
 ## How It Works
 
 1. **Initialization**: Each app validates its configuration and initializes cooldown tracking
-2. **Scheduling**: Apps run immediately and then every 6 hours
-3. **Forecast Fetching**: Calls Home Assistant's `weather.get_forecasts` service
-4. **Data Processing**: Extracts relevant weather data from the forecast response
-5. **Threshold Checking**: Compares current values against configured limits
-6. **Notification Logic**: Checks per-recipient cooldowns before sending notifications
-7. **Message Formatting**: Creates formatted messages with weather values and forecast times
+2. **Startup Messages**: Sends verification messages to recipients with `startup_message: true`
+3. **Scheduling**: Apps run immediately and then daily at each recipient's configured time
+4. **Forecast Fetching**: Calls Home Assistant's `weather.get_forecasts` service
+5. **Data Processing**: Extracts relevant weather data from the forecast response
+6. **Threshold Checking**: Compares current values against configured limits
+7. **Notification Logic**: Checks per-recipient cooldowns before sending notifications
+8. **Message Formatting**: Creates formatted messages with weather values and forecast times
 
 ## Architecture
 
