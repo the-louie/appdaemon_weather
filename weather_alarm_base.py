@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from typing import Dict
 import appdaemon.plugins.hass.hassapi as hass
 
@@ -44,7 +44,8 @@ class WeatherAlarmBase(hass.Hass):
         self._schedule_daily_checks()
 
         # Schedule periodic cleanup (daily at 02:00)
-        self.run_daily(self._cleanup_old_data, "02:00")
+        cleanup_time = time(2, 0)  # 02:00
+        self.run_daily(self._cleanup_old_data, cleanup_time)
 
         # Send startup messages to recipients who have it enabled
         self._send_startup_messages()
@@ -188,9 +189,16 @@ class WeatherAlarmBase(hass.Hass):
             time_of_day = recipient['time_of_day']
             if time_of_day not in scheduled_times:
                 # Only schedule once per unique time
-                self.run_daily(self.check_weather_forecast, time_of_day)
-                self.log(f"Scheduled daily check at {time_of_day}")
-                scheduled_times.add(time_of_day)
+                # Convert HH:MM string to time object for AppDaemon
+                try:
+                    hour, minute = map(int, time_of_day.split(':'))
+                    time_obj = time(hour, minute)
+                    self.run_daily(self.check_weather_forecast, time_obj)
+                    self.log(f"Scheduled daily check at {time_of_day}")
+                    scheduled_times.add(time_of_day)
+                except (ValueError, TypeError) as e:
+                    self.log(f"Error scheduling daily check for time {time_of_day}: {e}")
+                    return False
 
     def _send_startup_messages(self):
         """Send startup verification messages to recipients who have it enabled."""
