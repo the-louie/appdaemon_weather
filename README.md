@@ -36,7 +36,7 @@ WindAlarm:
   class: WeatherWindAlarm
   device_id: "your_weather_device_id"
   recipients:
-    - mobile_app_your_device
+    - notification_target: mobile_app_your_device
       startup_message: true
       time_of_day: "18:15"
   name: "Wind"
@@ -63,10 +63,10 @@ RainAlarm:
   class: WeatherRainAlarm
   device_id: "your_weather_device_id"
   recipients:
-    - mobile_app_your_device
+    - notification_target: mobile_app_your_device
       startup_message: true
       time_of_day: "18:15"
-    - mobile_app_your_device_2
+    - notification_target: mobile_app_your_device_2
       startup_message: false
       time_of_day: "12:15"
   name: "Rain"
@@ -93,7 +93,7 @@ TemperatureAlarm:
   class: WeatherTemperatureAlarm
   device_id: "your_weather_device_id"
   recipients:
-    - mobile_app_your_device
+    - notification_target: mobile_app_your_device
       startup_message: true
       time_of_day: "18:15"
   name: "Temperature"
@@ -142,27 +142,20 @@ TemperatureAlarm:
 
 ### Recipient Configuration
 
-Recipients can be configured in two formats:
+Recipients are configured as a list of dictionaries, each containing:
 
-**Simple format (legacy):**
 ```yaml
 recipients:
-  - mobile_app_your_device
-```
-
-**Advanced format (recommended):**
-```yaml
-recipients:
-  - mobile_app_your_device
+  - notification_target: mobile_app_your_device
     startup_message: true
     time_of_day: "18:15"
-  - mobile_app_your_device_2
+  - notification_target: mobile_app_your_device_2
     startup_message: false
     time_of_day: "12:15"
 ```
 
 **Recipient Parameters:**
-- **`name`** (optional): Recipient name (defaults to the key if using dict format)
+- **`notification_target`** (required): The notification target (e.g., mobile app device ID)
 - **`startup_message`** (optional): Whether to send verification message on app startup (default: true)
 - **`time_of_day`** (optional): Daily check time in HH:MM format (default: "18:15")
 

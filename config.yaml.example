@@ -3,7 +3,7 @@ WindAlarm:
   class: WeatherWindAlarm
   device_id: "8a9282bcd3f3555085c7dd8c3f"
   recipients:
-    - mobile_app_iphone_27
+    - notification_target: mobile_app_iphone_27
       startup_message: true
       time_of_day: "18:15"
   name: "Vind"
@@ -29,10 +29,10 @@ RainAlarm:
   class: WeatherRainAlarm
   device_id: "8a9282bcd3f3555085c7dd8c3f"
   recipients:
-    - mobile_app_iphone_27
+    - notification_target: mobile_app_iphone_27
       startup_message: true
       time_of_day: "18:15"
-    - mobile_app_iphone_27_2
+    - notification_target: mobile_app_iphone_27_2
       startup_message: false
       time_of_day: "12:15"
   name: "Regn"
@@ -54,7 +54,7 @@ TemperatureAlarm:
   class: WeatherTemperatureAlarm
   device_id: "8a9282bcd3f3555085c7dd8c3f"
   recipients:
-    - mobile_app_iphone_27
+    - notification_target: mobile_app_iphone_27
       startup_message: true
       time_of_day: "18:15"
   name: "Temperatur"

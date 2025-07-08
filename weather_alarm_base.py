@@ -78,45 +78,33 @@ class WeatherAlarmBase(hass.Hass):
         if not isinstance(self.recipients, list):
             self.recipients = [self.recipients]
 
-        # Process recipients to handle both string and dict formats
+        # Process recipients - each recipient should be a dict with notification_target, startup_message, and time_of_day
         self.processed_recipients = []
         for recipient in self.recipients:
-            if isinstance(recipient, str):
-                # Simple string format - use default settings
-                self.processed_recipients.append({
-                    'name': recipient,
-                    'startup_message': True,
-                    'time_of_day': self.DEFAULT_TIME_OF_DAY
-                })
-            elif isinstance(recipient, dict):
-                # Dict format with custom settings
-                if not recipient:
-                    self.log(f" >> {self.__class__.__name__}.initialize(): Warning - empty recipient dict")
-                    return False
+            if not isinstance(recipient, dict):
+                self.log(f" >> {self.__class__.__name__}.initialize(): Warning - recipient must be a dict: {recipient}")
+                return False
 
-                # Handle different dict formats
-                if 'name' in recipient:
-                    recipient_name = recipient['name']
-                elif len(recipient) == 1:
-                    # Single key-value pair format
-                    recipient_name = list(recipient.keys())[0]
-                else:
-                    self.log(f" >> {self.__class__.__name__}.initialize(): Warning - invalid recipient dict format: {recipient}")
-                    return False
+            if not recipient:
+                self.log(f" >> {self.__class__.__name__}.initialize(): Warning - empty recipient dict")
+                return False
 
-                self.processed_recipients.append({
-                    'name': recipient_name,
-                    'startup_message': recipient.get('startup_message', True),
-                    'time_of_day': recipient.get('time_of_day', self.DEFAULT_TIME_OF_DAY)
-                })
+            # Extract notification target (either 'notification_target' or 'name' field)
+            notification_target = recipient.get('notification_target') or recipient.get('name')
+            if not notification_target:
+                self.log(f" >> {self.__class__.__name__}.initialize(): Warning - recipient missing notification_target or name: {recipient}")
+                return False
 
-                # Validate time format
-                time_of_day = recipient.get('time_of_day', self.DEFAULT_TIME_OF_DAY)
-                if not self._validate_time_format(time_of_day):
-                    self.log(f" >> {self.__class__.__name__}.initialize(): Warning - invalid time format '{time_of_day}' for recipient {recipient_name}")
-                    return False
-            else:
-                self.log(f" >> {self.__class__.__name__}.initialize(): Warning - invalid recipient format: {recipient}")
+            self.processed_recipients.append({
+                'name': notification_target,
+                'startup_message': recipient.get('startup_message', True),
+                'time_of_day': recipient.get('time_of_day', self.DEFAULT_TIME_OF_DAY)
+            })
+
+            # Validate time format
+            time_of_day = recipient.get('time_of_day', self.DEFAULT_TIME_OF_DAY)
+            if not self._validate_time_format(time_of_day):
+                self.log(f" >> {self.__class__.__name__}.initialize(): Warning - invalid time format '{time_of_day}' for recipient {notification_target}")
                 return False
 
         if not self.limits:
