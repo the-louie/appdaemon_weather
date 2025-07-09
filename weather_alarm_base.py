@@ -209,7 +209,7 @@ class WeatherAlarmBase(hass.Hass):
             else:
                 self.log(f"Skipping startup message for {recipient['name']} (disabled)")
 
-    def _cleanup_old_data(self):
+    def _cleanup_old_data(self, kwargs=None):
         """Clean up old cooldown data to prevent memory bloat."""
         now = datetime.now()
         max_age = timedelta(days=7)  # Keep 7 days of data
