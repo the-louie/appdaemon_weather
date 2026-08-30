@@ -302,23 +302,61 @@ class WeatherAlarmBase(hass.Hass):
             import traceback
             self._log_with_level(f"Full traceback: {traceback.format_exc()}", "ERROR")
 
-    def _extract_forecast_data(self, response):
-        """Extract forecast data from the service response."""
+    def _extract_forecast_data(self, response, _depth=0):
+        """Extract the forecast list from a weather/get_forecasts response.
+
+        The response is nested and the shape depends on both the Home Assistant
+        version and how AppDaemon wraps the websocket result, so this searches
+        rather than assuming one layout. Shapes seen in the wild:
+
+            {"weather.forecast_home": {"forecast": [...]}}   <- HA >= 2024.x, entity-keyed
+            {"response": {"weather.x": {"forecast": [...]}}} <- AD websocket wrapper
+            {"result": {"response": {...}}}                  <- AD wrapper, another layer
+            {"forecast": [...]}                              <- older / direct
+            [ {...}, {...} ]                                 <- bare forecast list
+
+        The entity-keyed shape is why this previously returned None: the top-level
+        key is an entity id, not 'forecast', so the old lookup fell through. Fixed
+        2026-08-30 after the live service was confirmed returning 48 hourly entries
+        that the app then discarded.
+        """
         try:
-            # Handle different response structures
-            if isinstance(response, list) and response:
-                response = response[0]
+            if _depth > 6:
+                return None
 
-            if isinstance(response, dict):
-                if 'forecast' in response:
-                    return response['forecast']
-                elif 'datetime' in response:
-                    return [response]
-
+            # A bare list of forecast entries.
             if isinstance(response, list):
-                return response
+                if response and isinstance(response[0], dict) and 'datetime' in response[0]:
+                    return response
+                # Otherwise recurse into the first element (legacy behaviour).
+                return self._extract_forecast_data(response[0], _depth + 1) if response else None
 
-            self.log(f"Unexpected response structure: {type(response)}")
+            if not isinstance(response, dict):
+                self.log(f"Unexpected response structure: {type(response)}")
+                return None
+
+            # Direct hit.
+            forecast = response.get('forecast')
+            if isinstance(forecast, list):
+                return forecast
+
+            # A single forecast entry.
+            if 'datetime' in response:
+                return [response]
+
+            # Descend through known wrapper keys first, then any entity-id key.
+            for key in ('response', 'result'):
+                if key in response:
+                    found = self._extract_forecast_data(response[key], _depth + 1)
+                    if found is not None:
+                        return found
+
+            for key, value in response.items():
+                if isinstance(value, (dict, list)):
+                    found = self._extract_forecast_data(value, _depth + 1)
+                    if found is not None:
+                        return found
+
             return None
 
         except Exception as e:
