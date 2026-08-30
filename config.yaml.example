@@ -1,7 +1,21 @@
+# Android delivery note: notifications that do not name a `channel` are delivered on the
+# Home Assistant companion app's *default* channel. If that channel is disabled on the phone,
+# Android discards them silently - Home Assistant still reports success and nothing arrives.
+# Both keys below are optional and default to `weather_alerts` / `high`.
+#   notification_channel: name of the Android notification channel to deliver on.
+#                         Set to an empty value to send no channel (not recommended).
+#   notification_priority: "high" sets priority + ttl:0 so alerts are not deferred by Doze.
+#                          Set to an empty value to send at normal priority.
+#
+# NOTE: `name:` below is currently ignored - AppDaemon overwrites args["name"] with the app's
+# YAML key, so the display name is always the app name. Tracked as backlog T-53.
+
 WindAlarm:
   module: i1_weather_wind_alarm
   class: WeatherWindAlarm
   device_id: "8a9282bcd3f3555085c7dd8c3f"
+  notification_channel: weather_alerts
+  notification_priority: high
   recipients:
     - notification_target: mobile_app_iphone_27
       startup_message: true

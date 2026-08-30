@@ -32,6 +32,14 @@ class WeatherAlarmBase(hass.Hass):
         self.alert_name = self.args.get("name", f"{self.__class__.__name__}")
         self.limits = self.args.get("limits", [])
 
+        # Android companion-app delivery settings. The default HA notification channel
+        # can be disabled on the phone, which silently discards every notification sent
+        # to it - HA reports success and nothing arrives. Sending on a dedicated channel
+        # keeps weather alerts independent of that setting and lets them be muted on
+        # their own without affecting other apps. See backlog T-52.
+        self.notification_channel = self.args.get("notification_channel", "weather_alerts")
+        self.notification_priority = self.args.get("notification_priority", "high")
+
         # Validate configuration
         if not self._validate_config():
             return
@@ -188,6 +196,22 @@ class WeatherAlarmBase(hass.Hass):
                     self.log(f"Error scheduling daily check for time {time_of_day}: {e}")
                     return False
 
+    def _notification_data(self) -> dict:
+        """Build the companion-app data block for a notification.
+
+        Returns the Android delivery hints every notify call in this app must carry:
+        a dedicated channel, plus priority/ttl so the message is not deferred by Doze.
+        Returns an empty dict if no channel is configured, so the caller can pass it
+        unconditionally.
+        """
+        if not self.notification_channel:
+            return {}
+        data = {"channel": self.notification_channel}
+        if self.notification_priority:
+            data["priority"] = self.notification_priority
+            data["ttl"] = 0
+        return data
+
     def _send_startup_messages(self):
         """Send startup verification messages to recipients who have it enabled."""
         startup_message = f"{self.alert_name} - {self.__class__.__name__} is now active and monitoring {self._get_weather_description().lower()} conditions."
@@ -201,7 +225,8 @@ class WeatherAlarmBase(hass.Hass):
                     self.call_service(
                         "notify/{}".format(recipient_name),
                         title=title,
-                        message=startup_message
+                        message=startup_message,
+                        data=self._notification_data()
                     )
                     self.log(f"Startup message sent to {recipient_name}")
                 except Exception as e:
@@ -406,7 +431,8 @@ class WeatherAlarmBase(hass.Hass):
                     self.call_service(
                         "notify/{}".format(recipient_name),
                         title=title,
-                        message=full_message
+                        message=full_message,
+                        data=self._notification_data()
                     )
                     self.recipient_cooldowns[recipient_name][limit_message] = now
                     self.last_notification_time[recipient_name] = now
