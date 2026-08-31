@@ -400,11 +400,33 @@ class WeatherAlarmBase(hass.Hass):
             return None
 
     def _check_forecast_data(self, forecast_data):
-        """Check weather data in forecast data against limits. Override in subclasses."""
+        """Evaluate the whole forecast window and notify once, for its worst hour.
+
+        This used to notify per matching forecast entry, walking the window in
+        chronological order. Because the mildest hours usually come first, the
+        first match spent the recipient's rate-limit budget and the PEAK of the
+        window became the entry most likely to be dropped.
+
+        Observed live 2026-08-31:
+
+            Wind speed 36.0 triggers limit: Jätteblåsigt!
+            Rate limit active for mobile_app_pixel_9_pro, skipping notification
+
+        - the single most severe hour in the forecast, discarded after a dozen
+        'Lite blåsigt' entries had already consumed the budget. An alarm that
+        structurally cannot warn about the worst weather it can see is not
+        doing its job.
+
+        Severity comes from msg_cooldown, where lower means more severe. That is
+        not a new convention: _held_by_quiet_hours already reads it that way, and
+        it is the reason a band does not need a separate severity flag. Ties go
+        to the earliest forecast time, i.e. whichever arrives soonest.
+        """
         if not isinstance(forecast_data, list):
             self.log("Forecast data is not a list")
             return
 
+        matches = []
         for forecast in forecast_data:
             if not isinstance(forecast, dict):
                 continue
@@ -414,8 +436,49 @@ class WeatherAlarmBase(hass.Hass):
             if weather_value is None:
                 continue
 
+            if not self._validate_weather_value(weather_value):
+                self.log(f"Skipping invalid weather value: {weather_value}")
+                continue
+
+            limit = self._match_limit(weather_value)
+            if limit is None:
+                continue
+
             forecast_time = self._parse_forecast_time(forecast.get('datetime'))
-            self._check_weather_limit(weather_value, forecast_time)
+            matches.append((limit, weather_value, forecast_time))
+
+        if not matches:
+            return
+
+        limit, weather_value, forecast_time = min(matches, key=self._severity_key)
+        self.log(
+            f"{self._get_weather_description()} {weather_value} "
+            f"{self._get_weather_unit()} triggers limit: {limit.get('message')} "
+            f"(worst of {len(matches)} matching hours)"
+        )
+        self._send_notification(limit, weather_value, forecast_time)
+
+    def _match_limit(self, weather_value):
+        """Return the first configured band containing this value, or None."""
+        for limit in self.limits:
+            gt = limit.get("gt", 0)
+            lt = limit.get("lt", float('inf'))
+            if gt <= weather_value < lt:
+                return limit
+        return None
+
+    @staticmethod
+    def _severity_key(match):
+        """Sort key: most severe first, then soonest.
+
+        `min()` over this picks the worst hour. Timestamps are compared as
+        epoch floats so a tz-aware and a naive datetime can never raise, and a
+        missing time sorts last rather than crashing the comparison.
+        """
+        limit, _weather_value, forecast_time = match
+        cooldown = limit.get("msg_cooldown", float('inf'))
+        when = forecast_time.timestamp() if forecast_time else float('inf')
+        return (cooldown, when)
 
     def _extract_weather_value(self, forecast):
         """Extract weather value from forecast. Override in subclasses."""
@@ -437,20 +500,24 @@ class WeatherAlarmBase(hass.Hass):
         return None
 
     def _check_weather_limit(self, weather_value, forecast_time=None):
-        """Check if weather value exceeds any configured limits."""
+        """Check a SINGLE value against the limits and notify if it matches.
+
+        Retained for a caller that has one reading rather than a window. The
+        forecast path deliberately does not use this any more: calling it per
+        entry is what let the mildest hour spend the rate limit and suppress
+        the worst one. See _check_forecast_data.
+        """
         # Validate weather value before processing
         if not self._validate_weather_value(weather_value):
             self.log(f"Skipping invalid weather value: {weather_value}")
             return
 
-        for limit in self.limits:
-            gt = limit.get("gt", 0)
-            lt = limit.get("lt", float('inf'))
+        limit = self._match_limit(weather_value)
+        if limit is None:
+            return
 
-            if gt <= weather_value < lt:
-                self.log(f"{self._get_weather_description()} {weather_value} {self._get_weather_unit()} triggers limit: {limit.get('message')}")
-                self._send_notification(limit, weather_value, forecast_time)
-                break
+        self.log(f"{self._get_weather_description()} {weather_value} {self._get_weather_unit()} triggers limit: {limit.get('message')}")
+        self._send_notification(limit, weather_value, forecast_time)
 
     def _get_weather_description(self):
         """Get weather description for logging. Override in subclasses."""

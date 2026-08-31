@@ -17,6 +17,20 @@ WindAlarm:
   notification_channel: weather_alerts
   notification_priority: high
 
+  # The unit the FORECAST PROVIDER reports. The limit bands below are always
+  # m/s, which is what Sweden uses for wind; this only says what to convert
+  # from. Home Assistant reports whatever its weather integration is set to --
+  # check `wind_speed_unit` on the weather entity. Optional, defaults to km/h.
+  #
+  # Getting this wrong misreports storms rather than failing: until 2026-08-31
+  # the raw number was used as if it were m/s, so a 36 km/h breeze (10 m/s)
+  # announced itself as "Jätteblåsigt!" and every band but the top one fired at
+  # roughly a third of its intended wind. An unknown value now refuses to start
+  # (policy D1) rather than guessing.
+  #
+  # Accepted: m/s, km/h, mph, kn
+  wind_speed_unit: km/h
+
   # Policy D2 quiet hours, severity-aware.
   #
   # A band whose msg_cooldown is at or BELOW quiet_bypass_cooldown is treated as
