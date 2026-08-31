@@ -299,10 +299,18 @@ class WeatherAlarmBase(hass.Hass):
         self._log_with_level("Starting weather forecast check")
 
         try:
+            # `type` goes as a direct kwarg, NOT as data={...}. AppDaemon puts
+            # every kwarg except `target` straight into service_data, so
+            # data={"type": "hourly"} produces service_data {"data": {...}} and
+            # Home Assistant rejects the whole call:
+            #   invalid_format: extra keys not allowed @ data['data']
+            # The call then returns no forecast at all, which surfaces one
+            # frame later as the misleading "Could not extract forecast data".
+            # Contrast the notify/ calls below, where data= IS a real field.
             response = self.call_service(
                 "weather/get_forecasts",
                 target={"device_id": self.device_id},
-                data={"type": "hourly"}
+                type="hourly"
             )
 
             if response is None:
