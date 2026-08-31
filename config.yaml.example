@@ -16,6 +16,22 @@ WindAlarm:
   device_id: "8a9282bcd3f3555085c7dd8c3f"
   notification_channel: weather_alerts
   notification_priority: high
+
+  # Policy D2 quiet hours, severity-aware.
+  #
+  # A band whose msg_cooldown is at or BELOW quiet_bypass_cooldown is treated as
+  # critical and delivered whatever the hour - STORM VARNING! at 02:00 should
+  # wake you. Everything milder is held until the window opens. With the live
+  # config that means the 3600s bands get through and the 21600s / 86400s bands
+  # wait, which is why severity does not need a second flag: msg_cooldown
+  # already encodes it.
+  #
+  # Holding does NOT consume the band's cooldown, so a held alert lands when the
+  # window opens rather than a further interval later.
+  quiet_hours: true
+  quiet_start: 22               # hour 0-23, inclusive
+  quiet_end: 7                  # hour 0-23, exclusive
+  quiet_bypass_cooldown: 3600   # bands at or below this are critical
   recipients:
     - notification_target: mobile_app_iphone_27
       startup_message: true

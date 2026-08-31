@@ -2,6 +2,8 @@ from datetime import datetime, timedelta, time
 from typing import Dict
 import appdaemon.plugins.hass.hassapi as hass
 
+import notification_policy as policy
+
 
 class WeatherAlarmBase(hass.Hass):
     """Base class for weather alarm apps with shared functionality."""
@@ -39,6 +41,17 @@ class WeatherAlarmBase(hass.Hass):
         # their own without affecting other apps. See backlog T-52.
         self.notification_channel = self.args.get("notification_channel", "weather_alerts")
         self.notification_priority = self.args.get("notification_priority", "high")
+
+        # Policy D2 quiet hours, severity-aware. Unlike the battery checker,
+        # weather has a genuine "news" case: STORM VARNING! at 02:00 should wake
+        # you, Lite regn should not. Severity is already encoded in each band's
+        # msg_cooldown - the config assigns 3600s to the most severe bands and
+        # 86400s to the mildest - so a band at or below the threshold bypasses
+        # quiet hours rather than requiring a second, redundant severity flag.
+        self.quiet_hours = self.args.get("quiet_hours", True)
+        self.quiet_start = self.args.get("quiet_start", policy.DEFAULT_QUIET_START)
+        self.quiet_end = self.args.get("quiet_end", policy.DEFAULT_QUIET_END)
+        self.quiet_bypass_cooldown = self.args.get("quiet_bypass_cooldown", 3600)
 
         # Validate configuration
         if not self._validate_config():
@@ -195,6 +208,21 @@ class WeatherAlarmBase(hass.Hass):
                 except (ValueError, TypeError) as e:
                     self.log(f"Error scheduling daily check for time {time_of_day}: {e}")
                     return False
+
+    def _held_by_quiet_hours(self, msg_cooldown):
+        """True when this band should be held until the quiet window opens.
+
+        A band whose msg_cooldown is at or below `quiet_bypass_cooldown` is
+        treated as critical and always delivered - STORM VARNING! at 02:00
+        should wake you. Bands with no cooldown set are treated as non-critical.
+        """
+        if not self.quiet_hours:
+            return False
+        if not policy.in_quiet_hours(self.get_now().hour, self.quiet_start, self.quiet_end):
+            return False
+        if msg_cooldown is not None and msg_cooldown <= self.quiet_bypass_cooldown:
+            return False  # severe enough to wake someone
+        return True
 
     def _notification_data(self) -> dict:
         """Build the companion-app data block for a notification.
@@ -456,6 +484,20 @@ class WeatherAlarmBase(hass.Hass):
         title = self._sanitize_message(f"{self.alert_name} - {self._get_warning_title()}")
 
         self.log(f"Checking notifications for: {full_message}")
+
+        # D2: hold non-critical bands overnight. Checked once for the whole
+        # notification rather than per recipient - severity is a property of the
+        # band, not of who is being told. Deliberately does NOT touch the
+        # cooldown, so the alert lands when the window opens rather than being
+        # treated as already sent.
+        if self._held_by_quiet_hours(cooldown_seconds):
+            self.log(
+                f"Holding '{limit_message}' until quiet hours end "
+                f"({self.quiet_start:02d}:00-{self.quiet_end:02d}:00); "
+                f"band cooldown {cooldown_seconds}s is above the "
+                f"{self.quiet_bypass_cooldown}s critical threshold"
+            )
+            return
 
         for recipient in self.processed_recipients:
             recipient_name = recipient['name']
