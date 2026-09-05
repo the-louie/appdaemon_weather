@@ -31,7 +31,21 @@ class WeatherAlarmBase(hass.Hass):
         # Get configuration from app configuration
         self.device_id = self.args.get("device_id")
         self.recipients = self.args.get("recipients")
-        self.alert_name = self.args.get("name", f"{self.__class__.__name__}")
+        # Display name. AppDaemon injects the app's YAML key into args["name"]
+        # and overwrites whatever the config author wrote there, so a config
+        # saying `name: "Vind"` is silently discarded. Verified live 2026-09-05
+        # against the admin API: args["name"] reads 'WindAlarm', 'RainAlarm',
+        # 'TemperatureAlarm', 'TempAlarmLghEntre' -- the app keys, every time,
+        # with the configured value gone entirely rather than kept elsewhere.
+        #
+        # So the display name has to come from a key AppDaemon does not reserve.
+        # Falling back to args["name"] preserves exactly the previous behaviour
+        # for a config that has not been updated: the app key. (T-53)
+        self.alert_name = (
+            self.args.get("alert_name")
+            or self.args.get("name")
+            or self.__class__.__name__
+        )
         self.limits = self.args.get("limits", [])
 
         # Android companion-app delivery settings. The default HA notification channel

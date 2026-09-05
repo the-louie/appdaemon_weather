@@ -7,7 +7,7 @@
 #   notification_priority: "high" sets priority + ttl:0 so alerts are not deferred by Doze.
 #                          Set to an empty value to send at normal priority.
 #
-# NOTE: `name:` below is currently ignored - AppDaemon overwrites args["name"] with the app's
+# Display names: use `alert_name:`, NOT `name:` — see the note on the first app below.
 # YAML key, so the display name is always the app name. Tracked as backlog T-53.
 
 WindAlarm:
@@ -50,7 +50,11 @@ WindAlarm:
     - notification_target: mobile_app_iphone_27
       startup_message: true
       time_of_day: "18:15"
-  name: "Vind"
+  # AppDaemon reserves `name:` — it injects the app's YAML key there and
+  # overwrites whatever you write, so `name: "Vind"` was silently discarded and
+  # every alert was titled "WindAlarm". Verified live 2026-09-05. Use
+  # `alert_name:` instead; it falls back to the app key if unset. (T-53)
+  alert_name: "Vind"
   limits:
     - lt: 20
       gt: 10
@@ -79,7 +83,7 @@ RainAlarm:
     - notification_target: mobile_app_iphone_27_2
       startup_message: false
       time_of_day: "12:15"
-  name: "Regn"
+  alert_name: "Regn"
   limits:
     - lt: 7.5
       gt: 2.5
@@ -101,7 +105,7 @@ TemperatureAlarm:
     - notification_target: mobile_app_iphone_27
       startup_message: true
       time_of_day: "18:15"
-  name: "Temperatur"
+  alert_name: "Temperatur"
   limits:
     - lt: 0
       gt: -10
