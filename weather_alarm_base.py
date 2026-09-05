@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, time
+from time import time as epoch_now
 from typing import Dict
 import appdaemon.plugins.hass.hassapi as hass
 
@@ -202,7 +203,7 @@ class WeatherAlarmBase(hass.Hass):
             for limit in self.limits:
                 message = limit.get("message", "default")
                 cooldown = limit.get("msg_cooldown", 86400)
-                self.recipient_cooldowns[recipient_name][message] = datetime.now() - timedelta(seconds=cooldown)
+                self.recipient_cooldowns[recipient_name][message] = epoch_now() - cooldown
 
     def _schedule_daily_checks(self):
         """Schedule daily checks for each recipient at their specified time."""
@@ -234,9 +235,8 @@ class WeatherAlarmBase(hass.Hass):
             return False
         if not policy.in_quiet_hours(self.get_now().hour, self.quiet_start, self.quiet_end):
             return False
-        if msg_cooldown is not None and msg_cooldown <= self.quiet_bypass_cooldown:
-            return False  # severe enough to wake someone
-        return True
+        # A band at or below the bypass cooldown is severe enough to wake someone.
+        return msg_cooldown is None or msg_cooldown > self.quiet_bypass_cooldown
 
     def _notification_data(self) -> dict:
         """Build the companion-app data block for a notification.
@@ -278,8 +278,8 @@ class WeatherAlarmBase(hass.Hass):
 
     def _cleanup_old_data(self, kwargs=None):
         """Clean up old cooldown data to prevent memory bloat."""
-        now = datetime.now()
-        max_age = timedelta(days=7)  # Keep 7 days of data
+        now = epoch_now()
+        max_age = 7 * 86400  # Keep 7 days of data
 
         for recipient_name in list(self.recipient_cooldowns.keys()):
             for message in list(self.recipient_cooldowns[recipient_name].keys()):
@@ -293,7 +293,7 @@ class WeatherAlarmBase(hass.Hass):
 
     def _log_with_level(self, message, level="INFO"):
         """Log message with specified level."""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = self.get_now().strftime("%Y-%m-%d %H:%M:%S")
         log_message = f"[{timestamp}] {self.__class__.__name__}: {message}"
 
         if level == "ERROR":
@@ -309,7 +309,7 @@ class WeatherAlarmBase(hass.Hass):
 
     def check_weather_forecast(self, kwargs=None):
         """Fetch weather forecast and check weather data."""
-        start_time = datetime.now()
+        start_time = epoch_now()
         self._log_with_level("Starting weather forecast check")
 
         try:
@@ -339,7 +339,7 @@ class WeatherAlarmBase(hass.Hass):
             self._check_forecast_data(forecast_data)
 
             # Log performance metrics
-            duration = (datetime.now() - start_time).total_seconds()
+            duration = epoch_now() - start_time
             self._log_performance_metrics("weather_forecast_check", duration)
 
         except ValueError as e:
@@ -556,7 +556,7 @@ class WeatherAlarmBase(hass.Hass):
 
     def _send_notification(self, triggered_limit, weather_value, forecast_time=None):
         """Send notification to all configured recipients with per-recipient cooldown."""
-        now = datetime.now()
+        now = epoch_now()
         limit_message = triggered_limit.get('message', f'{self._get_weather_description()} warning')
         cooldown_seconds = triggered_limit.get("msg_cooldown", 86400)
 
@@ -621,17 +621,17 @@ class WeatherAlarmBase(hass.Hass):
         if last_time is None:
             return True
 
-        time_since_last = (now - last_time).total_seconds()
+        time_since_last = now - last_time
         return time_since_last >= self.min_notification_interval
 
     def _should_send_notification(self, recipient, limit_message, cooldown_seconds, now):
         """Check if notification should be sent based on cooldown."""
         last_message_time = self.recipient_cooldowns[recipient].get(
             limit_message,
-            now - timedelta(seconds=cooldown_seconds)
+            now - cooldown_seconds
         )
 
-        if (now - last_message_time).total_seconds() >= cooldown_seconds:
+        if now - last_message_time >= cooldown_seconds:
             return True
 
         remaining_cooldown = cooldown_seconds - (now - last_message_time).total_seconds()
