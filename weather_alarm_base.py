@@ -634,7 +634,7 @@ class WeatherAlarmBase(hass.Hass):
         if now - last_message_time >= cooldown_seconds:
             return True
 
-        remaining_cooldown = cooldown_seconds - (now - last_message_time).total_seconds()
+        remaining_cooldown = cooldown_seconds - (now - last_message_time)
         self.log(f"Cooldown active for {recipient} on limit '{limit_message}': {remaining_cooldown:.0f}s remaining")
         return False
 
