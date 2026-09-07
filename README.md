@@ -19,6 +19,9 @@ The apps use a shared base class (`WeatherAlarmBase`) that handles all common fu
 - **Comprehensive logging**: Detailed logs for debugging and monitoring
 - **Modular architecture**: Easy to extend for additional weather parameters
 - **Timezone support**: Proper handling of forecast timestamps
+- **Quiet hours with severity bypass**: 22:00-07:00 holds non-critical bands; a band whose `msg_cooldown` is at or below `quiet_bypass_cooldown` (default 3600s) is delivered whatever the hour
+- **Restart-safe cooldowns** (T-08): send-times persist to `state_file` (default `/conf/weather_alarm_<AppName>.json`), so an AppDaemon restart does not re-alert every standing condition
+- **Dedicated Android channel** (T-52): notifications carry `channel`/`priority` delivery hints (`notification_channel`, default `weather_alerts`)
 
 ## Installation
 
@@ -157,6 +160,8 @@ recipients:
 **Recipient Parameters:**
 - **`notification_target`** (required): The notification target (e.g., mobile app device ID)
 - **`startup_message`** (optional): Whether to send verification message on app startup (default: true)
+
+Top-level optional parameters: **`alert_name`** (display name for messages -- AppDaemon reserves and overwrites the `name` key, so a Swedish display name must use `alert_name`; T-53), **`quiet_hours`** / **`quiet_start`** / **`quiet_end`** / **`quiet_bypass_cooldown`** (D2 quiet-hours window and the severity bypass), **`notification_channel`** / **`notification_priority`** (Android delivery hints; a channel disabled on the phone silently discards its notifications), **`state_file`** (cooldown persistence path).
 - **`time_of_day`** (optional): Daily check time in HH:MM format (default: "18:15")
 
 ### Limit Configuration
@@ -176,7 +181,7 @@ Each limit has the following parameters:
 
 ## How It Works
 
-1. **Initialization**: Each app validates its configuration and initializes cooldown tracking
+1. **Initialization**: Each app validates its configuration and loads persisted cooldowns from `state_file`
 2. **Startup Messages**: Sends verification messages to recipients with `startup_message: true`
 3. **Scheduling**: Apps run immediately and then daily at each recipient's configured time
 4. **Forecast Fetching**: Calls Home Assistant's `weather.get_forecasts` service
