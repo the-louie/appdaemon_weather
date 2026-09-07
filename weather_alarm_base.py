@@ -1,3 +1,5 @@
+import json
+import os
 from datetime import datetime, timedelta, time
 from time import time as epoch_now
 from typing import Dict
@@ -67,6 +69,14 @@ class WeatherAlarmBase(hass.Hass):
         self.quiet_start = self.args.get("quiet_start", policy.DEFAULT_QUIET_START)
         self.quiet_end = self.args.get("quiet_end", policy.DEFAULT_QUIET_END)
         self.quiet_bypass_cooldown = self.args.get("quiet_bypass_cooldown", 3600)
+
+        # T-08 / D2: send-times persist across restarts. Without this,
+        # _initialize_cooldowns seeded every band as immediately eligible
+        # on every AppDaemon restart -- the "redundant restart-time
+        # re-alerts" problem D2 names explicitly.
+        self.state_file = self.args.get(
+            "state_file", f"/conf/weather_alarm_{self.name}.json"
+        )
 
         # Validate configuration
         if not self._validate_config():
@@ -195,15 +205,53 @@ class WeatherAlarmBase(hass.Hass):
             return False
 
     def _initialize_cooldowns(self):
-        """Initialize cooldown tracking for each recipient and limit."""
+        """Initialize cooldown tracking for each recipient and limit.
+
+        Persisted send-times win over the fresh-start seed (T-08): a restart
+        must not make every band immediately eligible again. Unknown
+        recipients/bands in the file are dropped; missing ones seed as
+        eligible (epoch_now() - cooldown), which is the correct first-run
+        behaviour.
+        """
+        persisted = self._load_state()
         self.recipient_cooldowns = {}
         for recipient in self.processed_recipients:
             recipient_name = recipient['name']
             self.recipient_cooldowns[recipient_name] = {}
+            saved = persisted.get(recipient_name, {})
             for limit in self.limits:
                 message = limit.get("message", "default")
                 cooldown = limit.get("msg_cooldown", 86400)
-                self.recipient_cooldowns[recipient_name][message] = epoch_now() - cooldown
+                seed = epoch_now() - cooldown
+                value = saved.get(message, seed)
+                if not isinstance(value, (int, float)):
+                    value = seed
+                self.recipient_cooldowns[recipient_name][message] = value
+
+    def _load_state(self):
+        """Read persisted send-times. Missing or corrupt starts empty."""
+        try:
+            with open(self.state_file, encoding="utf-8") as fh:
+                data = json.load(fh)
+            return data if isinstance(data, dict) else {}
+        except FileNotFoundError:
+            return {}
+        except (ValueError, OSError) as e:
+            self.log(f"Cooldown state unreadable, starting fresh: {e}",
+                     level="WARNING")
+            return {}
+
+    def _save_state(self):
+        """Persist atomically. A failure must not stop the alert going out."""
+        tmp = f"{self.state_file}.tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(self.recipient_cooldowns, fh)
+            os.replace(tmp, self.state_file)
+        except OSError as e:
+            self.log(
+                f"Could not persist cooldown state: {e} -- alerts will "
+                f"repeat after the next restart", level="WARNING")
 
     def _schedule_daily_checks(self):
         """Schedule daily checks for each recipient at their specified time."""
@@ -604,6 +652,7 @@ class WeatherAlarmBase(hass.Hass):
                         data=self._notification_data()
                     )
                     self.recipient_cooldowns[recipient_name][limit_message] = now
+                    self._save_state()
                     self.last_notification_time[recipient_name] = now
                     self.log(f"Notification sent to {recipient_name}")
                 except Exception as e:

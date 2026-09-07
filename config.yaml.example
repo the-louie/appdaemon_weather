@@ -46,6 +46,9 @@ WindAlarm:
   quiet_start: 22               # hour 0-23, inclusive
   quiet_end: 7                  # hour 0-23, exclusive
   quiet_bypass_cooldown: 3600   # bands at or below this are critical
+  # T-08: send-times persist here so a restart does not re-alert every
+  # standing condition. Default: /conf/weather_alarm_<AppName>.json
+  # state_file: /conf/weather_alarm_WindAlarm.json
   recipients:
     - notification_target: mobile_app_iphone_27
       startup_message: true
