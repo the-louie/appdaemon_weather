@@ -37,8 +37,13 @@ WindAlarm:
   # critical and delivered whatever the hour - STORM VARNING! at 02:00 should
   # wake you. Everything milder is held until the window opens. With the live
   # config that means the 3600s bands get through and the 21600s / 86400s bands
-  # wait, which is why severity does not need a second flag: msg_cooldown
-  # already encodes it.
+  # wait.
+  #
+  # Quiet hours ask "may this wake me?". The per-band `urgent` key below asks a
+  # different question, "does this matter when I am away?", and the owner
+  # answered it separately (T-72e, IQ-23, 2026-10-29). Today the answers
+  # coincide (urgent = the 3600s bands), but they are two decisions, so they are
+  # two keys.
   #
   # Holding does NOT consume the band's cooldown, so a held alert lands when the
   # window opens rather than a further interval later.
@@ -63,18 +68,22 @@ WindAlarm:
       gt: 10
       message: "Lite blåsigt"
       msg_cooldown: 86400
+      urgent: false   # required (T-72e): reaches you when away?
     - lt: 30
       gt: 20
       message: "Mycket blåsigt"
       msg_cooldown: 86400
+      urgent: false   # required (T-72e): reaches you when away?
     - lt: 40
       gt: 30
       message: "Jätteblåsigt!"
       msg_cooldown: 21600
+      urgent: false   # required (T-72e): reaches you when away?
     - lt: 1000
       gt: 40
       message: "STORM VARNING!"
       msg_cooldown: 3600
+      urgent: true   # required (T-72e): reaches you when away?
 RainAlarm:
   module: i1_weather_rain_alarm
   class: WeatherRainAlarm
@@ -92,14 +101,17 @@ RainAlarm:
       gt: 2.5
       message: "Måttligt regn"
       msg_cooldown: 86400
+      urgent: false   # required (T-72e): reaches you when away?
     - lt: 15
       gt: 7.5
       message: "Kraftigt regn"
       msg_cooldown: 21600
+      urgent: false   # required (T-72e): reaches you when away?
     - lt: 1000
       gt: 15
       message: "STARKT REGN!"
       msg_cooldown: 3600
+      urgent: true   # required (T-72e): reaches you when away?
 TemperatureAlarm:
   module: i1_weather_temperature_alarm
   class: WeatherTemperatureAlarm
@@ -114,23 +126,29 @@ TemperatureAlarm:
       gt: -10
       message: "Mycket kallt!"
       msg_cooldown: 21600
+      urgent: false   # required (T-72e): reaches you when away?
     - lt: -10
       gt: -50
       message: "EXTREMT KALLT!"
       msg_cooldown: 3600
+      urgent: true   # required (T-72e): reaches you when away?
     - lt: 25
       gt: 20
       message: "Varmt"
       msg_cooldown: 86400
+      urgent: false   # required (T-72e): reaches you when away?
     - lt: 30
       gt: 25
       message: "Mycket varmt"
       msg_cooldown: 86400
+      urgent: false   # required (T-72e): reaches you when away?
     - lt: 35
       gt: 30
       message: "Hett!"
       msg_cooldown: 21600
+      urgent: false   # required (T-72e): reaches you when away?
     - lt: 1000
       gt: 35
       message: "EXTREMT HETT!"
       msg_cooldown: 3600
+      urgent: true   # required (T-72e): reaches you when away?

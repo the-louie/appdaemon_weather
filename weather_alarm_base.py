@@ -5,6 +5,7 @@ from time import time as epoch_now
 from typing import Dict
 import appdaemon.plugins.hass.hassapi as hass
 
+import irisone_bus
 import notification_policy as policy
 
 
@@ -30,6 +31,13 @@ class WeatherAlarmBase(hass.Hass):
     def initialize(self):
         """Initialize the weather alarm app."""
         self.log(f"Loading {self.__class__.__name__}()")
+        # A-71.5: an older shared module winning AppDaemon's import path must stop
+        # the app here, where the watchdog sees it, not at the 18:15 check.
+        if not hasattr(policy, "should_notify") or not hasattr(irisone_bus, "presence_for_target"):
+            raise RuntimeError(f"stale shared module on the import path: "
+                               f"{policy.__file__}, {irisone_bus.__file__}")
+        # (band message, recipient) -> presence `since` of the last logged drop (O3).
+        self._drop_logged = {}
 
         # Get configuration from app configuration
         self.device_id = self.args.get("device_id")
@@ -162,6 +170,14 @@ class WeatherAlarmBase(hass.Hass):
             if not isinstance(limit, dict):
                 self.log(f" >> {self.__class__.__name__}.initialize(): Warning - limit at index {i} is not a dict")
                 return False
+
+            # T-72e (owner IQ-12/IQ-23, 2026-10-29): every band states its
+            # urgency; no default. Raised, not logged-and-returned: an
+            # unclassified band must stop the app where the watchdog sees it (D1).
+            if not isinstance(limit.get("urgent"), bool):
+                raise ValueError(
+                    f"{self.__class__.__name__}: limit {i} ({limit.get('message')!r}) needs "
+                    f"'urgent: true|false', got {limit.get('urgent')!r}")
 
             try:
                 gt = limit.get("gt", 0)
@@ -308,9 +324,19 @@ class WeatherAlarmBase(hass.Hass):
         startup_message = self._sanitize_message(startup_message)
         title = self._sanitize_message(f"{self.alert_name} - Startup")
 
+        # NON_URGENT (owner, IQ-24 2026-10-29): it needs no action, and the
+        # watchdog reports an app that failed to start.
+        domain = self.get_state(irisone_bus.DOMAIN)
         for recipient in self.processed_recipients:
             if recipient.get('startup_message', True):
                 recipient_name = recipient['name']
+                in_home, since = irisone_bus.presence_for_target(domain, recipient_name, epoch_now())
+                send, reason = policy.should_notify(policy.NON_URGENT, in_home)
+                self._report_gate("startup", recipient_name, policy.NON_URGENT, send, reason)
+                if not send:
+                    if policy.drop_log_due("startup", recipient_name, since, self._drop_logged):
+                        self.log(f"[presence] dropped {self.name}/startup to {recipient_name}: {reason}")
+                    continue
                 try:
                     self.call_service(
                         "notify/{}".format(recipient_name),
@@ -636,8 +662,24 @@ class WeatherAlarmBase(hass.Hass):
             )
             return
 
+        # Per-band urgency (owner, IQ-23): the gate runs first, and a drop touches
+        # neither recipient_cooldowns nor the rate limit, so a band still
+        # forecast when the person is home is sent at the next check (IQ-13).
+        urgent = triggered_limit["urgent"]
+        domain = self.get_state(irisone_bus.DOMAIN)
         for recipient in self.processed_recipients:
             recipient_name = recipient['name']
+            in_home, since = irisone_bus.presence_for_target(domain, recipient_name, now)
+            if urgent:
+                gate_send, gate_reason = policy.should_notify(policy.URGENT, in_home)
+            else:
+                gate_send, gate_reason = policy.should_notify(policy.NON_URGENT, in_home)
+            self._report_gate(limit_message, recipient_name,
+                              policy.URGENT if urgent else policy.NON_URGENT, gate_send, gate_reason)
+            if not gate_send:
+                if policy.drop_log_due(limit_message, recipient_name, since, self._drop_logged):
+                    self.log(f"[presence] dropped {self.name}/{limit_message} to {recipient_name}: {gate_reason}")
+                continue
             if self._should_send_notification(recipient_name, limit_message, cooldown_seconds, now):
                 # Check rate limiting
                 if not self._check_rate_limit(recipient_name, now):
@@ -659,6 +701,14 @@ class WeatherAlarmBase(hass.Hass):
                     self.log(f"Error sending notification to {recipient_name}: {e}")
             else:
                 self.log(f"Cooldown active for {recipient_name} on limit '{limit_message}'")
+
+    def _report_gate(self, key, target, urgency, send, reason):
+        """Count the decision in irisone.notify_gate_stats (IQ-28). Never blocks a send."""
+        try:
+            self.fire_event(irisone_bus.GATE_EVENT, **irisone_bus.gate_event(
+                self.name, key, target, urgency, send, reason))
+        except Exception as e:  # the counter is evidence, not a dependency
+            self.log(f"[presence] could not report gate decision: {e}", level="WARNING")
 
     def _get_warning_title(self):
         """Get warning title for notifications. Override in subclasses."""
