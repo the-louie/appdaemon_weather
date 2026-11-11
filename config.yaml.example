@@ -63,22 +63,8 @@ WindAlarm:
   # every alert was titled "WindAlarm". Verified live 2026-09-05. Use
   # `alert_name:` instead; it falls back to the app key if unset. (T-53)
   alert_name: "Vind"
+  # Severe weather only (owner 2026-11-11, T-75): milder bands were removed.
   limits:
-    - lt: 20
-      gt: 10
-      message: "Lite blåsigt"
-      msg_cooldown: 86400
-      urgent: false   # required (T-72e): reaches you when away?
-    - lt: 30
-      gt: 20
-      message: "Mycket blåsigt"
-      msg_cooldown: 86400
-      urgent: false   # required (T-72e): reaches you when away?
-    - lt: 40
-      gt: 30
-      message: "Jätteblåsigt!"
-      msg_cooldown: 21600
-      urgent: false   # required (T-72e): reaches you when away?
     - lt: 1000
       gt: 40
       message: "STORM VARNING!"
@@ -96,17 +82,8 @@ RainAlarm:
       startup_message: false
       time_of_day: "12:15"
   alert_name: "Regn"
+  # Severe weather only (owner 2026-11-11, T-75): milder bands were removed.
   limits:
-    - lt: 7.5
-      gt: 2.5
-      message: "Måttligt regn"
-      msg_cooldown: 86400
-      urgent: false   # required (T-72e): reaches you when away?
-    - lt: 15
-      gt: 7.5
-      message: "Kraftigt regn"
-      msg_cooldown: 21600
-      urgent: false   # required (T-72e): reaches you when away?
     - lt: 1000
       gt: 15
       message: "STARKT REGN!"
@@ -121,32 +98,13 @@ TemperatureAlarm:
       startup_message: true
       time_of_day: "18:15"
   alert_name: "Temperatur"
+  # Severe weather only (owner 2026-11-11, T-75): milder bands were removed.
   limits:
-    - lt: 0
-      gt: -10
-      message: "Mycket kallt!"
-      msg_cooldown: 21600
-      urgent: false   # required (T-72e): reaches you when away?
     - lt: -10
       gt: -50
       message: "EXTREMT KALLT!"
       msg_cooldown: 3600
       urgent: true   # required (T-72e): reaches you when away?
-    - lt: 25
-      gt: 20
-      message: "Varmt"
-      msg_cooldown: 86400
-      urgent: false   # required (T-72e): reaches you when away?
-    - lt: 30
-      gt: 25
-      message: "Mycket varmt"
-      msg_cooldown: 86400
-      urgent: false   # required (T-72e): reaches you when away?
-    - lt: 35
-      gt: 30
-      message: "Hett!"
-      msg_cooldown: 21600
-      urgent: false   # required (T-72e): reaches you when away?
     - lt: 1000
       gt: 35
       message: "EXTREMT HETT!"
